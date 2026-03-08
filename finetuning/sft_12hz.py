@@ -17,15 +17,41 @@ import argparse
 import json
 import os
 import shutil
+import gc
+import sys 
 
 import torch
 from accelerate import Accelerator
 from dataset import TTSDataset
+from huggingface_hub import snapshot_download
+
+# Local qwen_tts modülünü ekle
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qwen_tts.inference.qwen3_tts_model import Qwen3TTSModel
 from safetensors.torch import save_file
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from transformers import AutoConfig
+
+
+def get_device_accelerator_config():
+    """Cihaza göre Accelerator konfigürasyonu"""
+    if torch.cuda.is_available():
+        return Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        # MPS için daha konservatif ayarlar  
+        return Accelerator(gradient_accumulation_steps=8, mixed_precision="fp16", log_with="tensorboard")
+    else:
+        return Accelerator(gradient_accumulation_steps=8, log_with="tensorboard")
+
+
+def memory_cleanup():
+    """Bellek temizliği"""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.empty_cache()
 
 target_speaker_embedding = None
 def train():
@@ -41,14 +67,23 @@ def train():
     parser.add_argument("--speaker_name", type=str, default="speaker_test")
     args = parser.parse_args()
 
-    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")
+    # Cihaza özel accelerator konfigürasyonu
+    accelerator = get_device_accelerator_config()
+    
+    # MPS için bellek optimizasyonu
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        torch.mps.set_per_process_memory_fraction(0.7)
+        print("MPS bellek fraksiyonu: 0.7")
+    
+    memory_cleanup()  # Başlangıç temizliği
 
     MODEL_PATH = args.init_model_path
 
     qwen3tts = Qwen3TTSModel.from_pretrained(
         MODEL_PATH,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        torch_dtype=torch.float16 if accelerator.mixed_precision == "fp16" else torch.bfloat16,
+        attn_implementation="eager",  # flash_attention_2 MPS'te çalışmaz
+        low_cpu_mem_usage=True,
     )
     config = AutoConfig.from_pretrained(MODEL_PATH)
 
@@ -106,7 +141,7 @@ def train():
 
                 hidden_states = outputs.hidden_states[0][-1]
                 talker_hidden_states = hidden_states[codec_mask[:, 1:]]
-                talker_codec_ids = codec_ids[codec_mask]
+                talker_codec_ids = codec_ids[:, 1:][codec_mask[:, 1:]]
 
                 sub_talker_logits, sub_talker_loss = model.talker.forward_sub_talker_finetune(talker_codec_ids, talker_hidden_states)
 
@@ -125,9 +160,13 @@ def train():
 
         if accelerator.is_main_process:
             output_dir = os.path.join(args.output_model_path, f"checkpoint-epoch-{epoch}")
-            shutil.copytree(MODEL_PATH, output_dir, dirs_exist_ok=True)
+            # HuggingFace model ID ise önce lokal cache'e indir
+            local_model_path = MODEL_PATH
+            if not os.path.isdir(local_model_path):
+                local_model_path = snapshot_download(MODEL_PATH)
+            shutil.copytree(local_model_path, output_dir, dirs_exist_ok=True)
 
-            input_config_file = os.path.join(MODEL_PATH, "config.json")
+            input_config_file = os.path.join(local_model_path, "config.json")
             output_config_file = os.path.join(output_dir, "config.json")
             with open(input_config_file, 'r', encoding='utf-8') as f:
                 config_dict = json.load(f)
