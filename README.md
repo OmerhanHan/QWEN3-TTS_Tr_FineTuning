@@ -1,3 +1,6 @@
+<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/49c331ed-e251-4401-abdc-72c80ba22375" />
+
+
 # 🇹🇷 Qwen3-TTS Türkçe Fine-Tuning & Ses Klonlama
 
 Qwen3-TTS modelini **Türkçe veri setiyle fine-tune** edip, **hedef bir sesi klonlamak** için hazırlanmış Google Colab notebook'u.
