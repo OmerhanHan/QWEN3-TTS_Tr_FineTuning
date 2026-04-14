@@ -1,6 +1,4 @@
-<img width="1024" height="1024" alt="image" src="<img width="1376" height="768" alt="17761729225c15" src="https://github.com/user-attachments/assets/1d2e9542-1639-4994-b7ae-1836cc07f451" />
-" />
-
+<img width="512" height="571" alt="image" src="https://github.com/user-attachments/assets/8cefd862-0099-4303-a2de-3a3008f80fda" />
 
 # 🇹🇷 Qwen3-TTS Türkçe Fine-Tuning & Ses Klonlama
 
