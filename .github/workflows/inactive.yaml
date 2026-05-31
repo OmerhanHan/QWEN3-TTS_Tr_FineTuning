@@ -24,7 +24,7 @@ jobs:
           days-before-pr-stale: -1
           days-before-pr-close: -1
           operations-per-run: 128
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dessant/lock-threads@v5
         with:
           issue-inactive-days: 60
